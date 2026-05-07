@@ -5,6 +5,21 @@
 <meta charset="UTF-8">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyBsafgSvddm3AYGFpocq9PZJx6bQVld4n8",
+    authDomain: "rrhh-callup.firebaseapp.com",
+    projectId: "rrhh-callup",
+    storageBucket: "rrhh-callup.firebasestorage.app",
+    messagingSenderId: "509930247731",
+    appId: "1:509930247731:web:01b4667eac8c039526f546"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+</script>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -264,6 +279,11 @@ tbody tr:hover{background:var(--pu-50)}
 </style>
 </head>
 <body>
+<div id="fb-loading" style="position:fixed;inset:0;background:linear-gradient(135deg,#2d0a6b,#5016b8);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;color:#fff;font-family:'Plus Jakarta Sans',sans-serif">
+  <div style="font-size:32px;margin-bottom:12px">🔥</div>
+  <div style="font-size:15px;font-weight:700;margin-bottom:8px">Conectando con la base de datos...</div>
+  <div style="font-size:12px;opacity:0.6">RRHH Callup</div>
+</div>
 <div class="app">
 <nav class="sidebar">
   <div class="sidebar-header">
@@ -1251,15 +1271,11 @@ const _ORIG_DATA = JSON.parse(JSON.stringify(DATA));
 let localNew = [];
 let renovContratos = {};
 
-// ── Persistencia en localStorage ──────────────────────────────────
-const LS_KEY_DATA    = 'callup_data_patches';   // cambios sobre DATA original
-const LS_KEY_NEW     = 'callup_new_employees';  // empleados nuevos
-const LS_KEY_RENOV   = 'callup_renov_contratos'; // contratos registrados
-const LS_KEY_VAC     = 'callup_vacaciones';       // vacaciones aprobadas por empleado
+// ── Persistencia en Firebase Firestore ──────────────────────────────────
 
-function saveState(){
+async function saveState(){
   try {
-    // Guardar parches sobre DATA (status, renovacion, fecha_baja, campos editados)
+    // Guardar parches sobre DATA
     const patches = {};
     DATA.forEach(r => {
       const orig = _ORIG_DATA.find(o => o.documento === r.documento);
@@ -1268,34 +1284,43 @@ function saveState(){
       Object.keys(r).forEach(k => { if(r[k] !== orig[k]) diff[k] = r[k]; });
       if(Object.keys(diff).length) patches[r.documento] = diff;
     });
-    localStorage.setItem(LS_KEY_DATA, JSON.stringify(patches));
-    localStorage.setItem(LS_KEY_NEW,  JSON.stringify(localNew));
-    localStorage.setItem(LS_KEY_RENOV, JSON.stringify(renovContratos));
-  } catch(e){ console.warn('localStorage no disponible:', e); }
+    await db.collection('callup_state').doc('main').set({
+      patches: patches,
+      localNew: localNew,
+      renovContratos: renovContratos,
+      updatedAt: new Date().toISOString()
+    });
+  } catch(e){ console.warn('Error guardando en Firestore:', e); }
 }
 
-function loadState(){
+async function loadState(){
   try {
+    const doc = await db.collection('callup_state').doc('main').get();
+    if(!doc.exists) return;
+    const data = doc.data();
     // Restaurar parches sobre DATA
-    const patches = JSON.parse(localStorage.getItem(LS_KEY_DATA)||'{}');
-    Object.entries(patches).forEach(([doc, diff]) => {
-      const idx = DATA.findIndex(r => r.documento === doc);
+    const patches = data.patches || {};
+    Object.entries(patches).forEach(([doc2, diff]) => {
+      const idx = DATA.findIndex(r => r.documento === doc2);
       if(idx >= 0) Object.assign(DATA[idx], diff);
     });
     // Restaurar empleados nuevos
-    const newEmps = JSON.parse(localStorage.getItem(LS_KEY_NEW)||'[]');
+    const newEmps = data.localNew || [];
     localNew.push(...newEmps);
     // Restaurar contratos de renovación
-    const renov = JSON.parse(localStorage.getItem(LS_KEY_RENOV)||'{}');
+    const renov = data.renovContratos || {};
     Object.assign(renovContratos, renov);
   } catch(e){ console.warn('Error cargando estado:', e); }
 }
 
-function clearState(){
+async function clearState(){
   if(!confirm('¿Seguro que quieres restablecer todos los cambios al estado original?')) return;
-  localStorage.removeItem(LS_KEY_DATA);
-  localStorage.removeItem(LS_KEY_NEW);
-  localStorage.removeItem(LS_KEY_RENOV);
+  try {
+    await db.collection('callup_state').doc('main').delete();
+    await db.collection('callup_state').doc('vacaciones').delete();
+    await db.collection('callup_state').doc('descansos').delete();
+    await db.collection('callup_state').doc('licencias').delete();
+  } catch(e){}
   location.reload();
 }
 
@@ -1658,10 +1683,12 @@ function mostrarPerfil(r){
 const DIAS_VAC_ANUALES = 15;
 
 function getVacData(){
-  try{ return JSON.parse(localStorage.getItem(LS_KEY_VAC)||'{}'); }catch(e){ return {}; }
+  return window._vacDataCache || {};
 }
 function saveVacData(data){
-  localStorage.setItem(LS_KEY_VAC, JSON.stringify(data));
+  window._vacDataCache = data;
+  db.collection('callup_state').doc('vacaciones').set({ data: data, updatedAt: new Date().toISOString() })
+    .catch(e => console.warn('Error guardando vacaciones:', e));
 }
 
 // Días acumulados proporcionales desde ingreso hasta hoy
@@ -2926,8 +2953,19 @@ function renderDashboard(){
   // Render all charts with current keys
   setChart1(_c1); setChart2(_c2); setChart3(_c3); setChart4(_c4);
 }
-loadState();
-initFiltros();
+// Cargar todo desde Firestore antes de inicializar la UI
+(async function initApp(){
+  try {
+    // Cargar vacaciones en caché
+    const vacDoc = await db.collection('callup_state').doc('vacaciones').get();
+    window._vacDataCache = vacDoc.exists ? (vacDoc.data().data || {}) : {};
+  } catch(e){ window._vacDataCache = {}; }
+  await loadState();
+  initFiltros();
+  // Ocultar pantalla de carga
+  const loader = document.getElementById('fb-loading');
+  if(loader) loader.style.display = 'none';
+})();
 
 // Generar meses dinamicamente en selects de filtro
 (function(){
@@ -3100,17 +3138,20 @@ function exportarExcelCompleto(){
 /* ═══════════════════════════════════════════════════════════════
    DESCANSO MÉDICO — Lógica completa
    ═══════════════════════════════════════════════════════════════ */
-const LS_KEY_DM = 'callup_descanso_medico';
 let dmData = [];  // array de registros de descanso médico
 let dmCurrentDoc = null;
 let licCurrentDoc = null;
 let licTabActual = 'todas';
 
-function loadDM(){
-  try { dmData = JSON.parse(localStorage.getItem(LS_KEY_DM)||'[]'); } catch(e){ dmData = []; }
+async function loadDM(){
+  try {
+    const doc = await db.collection('callup_state').doc('descansos').get();
+    dmData = doc.exists ? (doc.data().data || []) : [];
+  } catch(e){ dmData = []; }
 }
 function saveDM(){
-  try { localStorage.setItem(LS_KEY_DM, JSON.stringify(dmData)); } catch(e){}
+  db.collection('callup_state').doc('descansos').set({ data: dmData, updatedAt: new Date().toISOString() })
+    .catch(e => console.warn('Error guardando descansos:', e));
 }
 
 /* ── Autocomplete en módulo de descanso ── */
@@ -3412,12 +3453,17 @@ function guardarDM(){
 const LS_KEY_LIC = 'callup_licencias';
 let licData = [];
 
-function loadLIC(){
-  try { licData = JSON.parse(localStorage.getItem(LS_KEY_LIC)||'[]'); } catch(e){ licData = []; }
+async function loadLIC(){
+  try {
+    const doc = await db.collection('callup_state').doc('licencias').get();
+    licData = doc.exists ? (doc.data().data || []) : [];
+  } catch(e){ licData = []; }
 }
 function saveLIC(){
-  try { localStorage.setItem(LS_KEY_LIC, JSON.stringify(licData)); } catch(e){}
+  db.collection('callup_state').doc('licencias').set({ data: licData, updatedAt: new Date().toISOString() })
+    .catch(e => console.warn('Error guardando licencias:', e));
 }
+
 
 function licSearchInput(){
   const q=(document.getElementById('lic-search-input').value||'').toLowerCase().trim();
@@ -4255,10 +4301,12 @@ function confirmarBaja(){
 }
 
 // Cargar datos de DM y licencias al iniciar
-loadDM();
-loadLIC();
-updateDMStats();
-updateLicStats();
+(async function(){
+  await loadDM();
+  await loadLIC();
+  updateDMStats();
+  updateLicStats();
+})();
 
 // ═══════════════════════════════════════════════════════════════
 //  MÓDULO DOCUMENTOS DE BAJAS
