@@ -1952,7 +1952,7 @@ function patchRecord(doc, updates){
   if(di>=0) Object.assign(DATA[di], updates);
   const li=localNew.findIndex(x=>x.documento===doc);
   if(li>=0) Object.assign(localNew[li], updates);
-  saveState();
+  saveState(); // fire-and-forget ok
 }
 
 function cambiarStatusPerfil(nuevoStatus){
@@ -2346,7 +2346,7 @@ function guardarEmpleado(){
     pct_comision: document.getElementById('f-pcomision').value||'0'
   };
   localNew.push(nuevo);
-  saveState();
+  saveState(); // fire-and-forget ok
   limpiarForm();
   showToast('✅ '+nombre+' guardado correctamente');
   renderEmps(); renderRenov(); renderBajas(); renderDashboard();
@@ -2570,14 +2570,14 @@ function cerrarModalRenov(){
   _renovTarget=null;
 }
 
-function guardarNuevoContrato(){
+async function guardarNuevoContrato(){
   const i=document.getElementById('mr-inicio').value;
   const f=document.getElementById('mr-fin').value;
   if(!i||!f){showToast('Completa las fechas de inicio y fin');return;}
   if(new Date(f)<=new Date(i)){showToast('La fecha fin debe ser mayor al inicio');return;}
   const obs=document.getElementById('mr-obs').value.trim();
   renovContratos[_renovTarget.documento]={inicio:fmtDate(i),fin:fmtDate(f),obs};
-  saveState();
+  await saveState();
   // Actualizar directamente en DATA
   const idxData=DATA.findIndex(x=>x.documento===_renovTarget.documento);
   if(idxData>=0){
@@ -2637,7 +2637,7 @@ function marcarNoRenovacion(){
   renderBajas();
   renderEmps();
   renderCumples();
-  saveState();
+  saveState(); // fire-and-forget ok
   showToast('🚫 '+_renovTarget.nombre+' marcado como NO RENOVACIÓN y movido a Bajas');
 }
 
@@ -4272,7 +4272,7 @@ document.addEventListener('change', e => {
   if(e.target.id==='baja-motivo'||e.target.id==='baja-fecha') actualizarPreviewBaja();
 });
 
-function confirmarBaja(){
+async function confirmarBaja(){
   const doc = document.getElementById('baja-emp-doc-hidden').value;
   const motivo = document.getElementById('baja-motivo').value;
   const fecha = document.getElementById('baja-fecha').value;
@@ -4291,7 +4291,7 @@ function confirmarBaja(){
   emp.renovacion = 'CESADO';
 
   // Persist changes
-  saveState();
+  await saveState();
   cerrarModalBaja();
   renderBajas();
   renderEmps();
