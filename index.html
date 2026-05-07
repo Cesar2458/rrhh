@@ -2962,6 +2962,11 @@ function renderDashboard(){
   } catch(e){ window._vacDataCache = {}; }
   await loadState();
   initFiltros();
+  renderDashboard();
+  renderEmps();
+  renderRenov();
+  renderBajas();
+  renderCumples();
   // Ocultar pantalla de carga
   const loader = document.getElementById('fb-loading');
   if(loader) loader.style.display = 'none';
@@ -2993,11 +2998,7 @@ function renderDashboard(){
   llenarSelect('dm-mes-filter');
 })();
 
-renderDashboard();
-renderEmps();
-renderRenov();
-renderBajas();
-renderCumples();
+// renders moved inside initApp() to run after Firestore loads
 
 // ── Exportar a Excel ──────────────────────────────────────────────
 function buildExcelData(registros){
