@@ -2993,13 +2993,14 @@ function doLogout(){
   auth.signOut();
 }
 
-// Cargar todo desde Firestore antes de inicializar la UI
-// Mostrar loader mientras Firebase verifica sesión
+// Al cargar la página, siempre cerrar sesión para pedir credenciales
 (function(){
   const loginScreen = document.getElementById('login-screen');
   const loader      = document.getElementById('fb-loading');
-  if(loginScreen) loginScreen.style.display = 'none';
-  if(loader)      loader.style.display = 'flex';
+  if(loader)      loader.style.display = 'none';
+  if(loginScreen) loginScreen.style.display = 'flex';
+  // Cerrar cualquier sesión activa al iniciar
+  auth.signOut();
 })();
 
 auth.onAuthStateChanged(async (user) => {
@@ -3007,15 +3008,10 @@ auth.onAuthStateChanged(async (user) => {
   const loader      = document.getElementById('fb-loading');
   const appEl       = document.querySelector('.app');
 
-  // Solo este UID tiene acceso
-  const AUTHORIZED_UID = 'hCTIg0r3hOTlfaKCiAke1kZmcL73';
-
-  if(!user || user.uid !== AUTHORIZED_UID){
-    // No hay sesión o usuario no autorizado — cerrar sesión y mostrar login
-    if(user) auth.signOut();
+  if(!user){
     if(loader)      loader.style.display = 'none';
     if(appEl)       appEl.style.display  = 'none';
-    if(loginScreen){ loginScreen.style.display = 'flex'; }
+    if(loginScreen) loginScreen.style.display = 'flex';
     return;
   }
 
