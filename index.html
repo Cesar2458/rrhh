@@ -326,6 +326,7 @@ tbody tr:hover{background:var(--pu-50)}
     <div class="nav-item" onclick="showMod('descanso',this)"><span class="nav-icon">🏥</span> Descanso Médico <span class="badge" id="dm-badge" style="background:linear-gradient(135deg,#0ea5e9,#0284c7)">0</span></div>
     <div class="nav-item" onclick="showMod('licencias',this)"><span class="nav-icon">📄</span> Licencias <span class="badge" id="lic-badge" style="background:linear-gradient(135deg,#059669,#047857)">0</span></div>
     <div class="nav-item" onclick="showMod('documentos',this)"><span class="nav-icon">🖨️</span> Documentos Bajas</div>
+    <div class="nav-item" onclick="showMod('planilla',this)"><span class="nav-icon">💰</span> Planilla Mensual</div>
   </div>
 </nav>
 
@@ -2993,36 +2994,23 @@ function doLogout(){
   auth.signOut();
 }
 
-// Flag: sólo cargar la app una vez (evita loops)
-let _appLoaded = false;
-
-// Mostrar login inmediatamente, sin esperar a Firebase
-(function(){
-  document.getElementById('fb-loading').style.display  = 'none';
-  document.getElementById('login-screen').style.display = 'flex';
-  document.querySelector('.app').style.display          = 'none';
-  // Limpiar sesión guardada en el navegador
-  auth.signOut().catch(()=>{});
-})();
-
+// Cargar todo desde Firestore antes de inicializar la UI
 auth.onAuthStateChanged(async (user) => {
-  if(_appLoaded) return;          // ya cargó, ignorar disparos extra
-
   const loginScreen = document.getElementById('login-screen');
   const loader      = document.getElementById('fb-loading');
   const appEl       = document.querySelector('.app');
 
   if(!user){
-    loader.style.display      = 'none';
-    appEl.style.display       = 'none';
-    loginScreen.style.display = 'flex';
+    // No hay sesión — mostrar login
+    if(loader)      loader.style.display = 'none';
+    if(appEl)       appEl.style.display  = 'none';
+    if(loginScreen){ loginScreen.style.display = 'flex'; }
     return;
   }
 
   // Hay sesión — cargar datos y mostrar app
-  _appLoaded = true;
   if(loginScreen) loginScreen.style.display = 'none';
-  if(appEl)       appEl.style.display = 'none';
+  if(appEl)       appEl.style.display = 'flex';
   if(loader)      loader.style.display = 'flex';
 
   try {
@@ -3031,7 +3019,9 @@ auth.onAuthStateChanged(async (user) => {
   } catch(e){ window._vacDataCache = {}; }
 
   await loadState();
+  await loadPlanilla();
   initFiltros();
+  initPlanilla();
   renderDashboard();
   renderEmps();
   renderRenov();
@@ -3039,7 +3029,6 @@ auth.onAuthStateChanged(async (user) => {
   renderCumples();
 
   if(loader) loader.style.display = 'none';
-  if(appEl)  appEl.style.display  = 'flex';
 });
 
 // Generar meses dinamicamente en selects de filtro
@@ -4818,5 +4807,300 @@ function generarTodosDocumentos() {
 }
 
 
+// ═══════════════════════════════════════════════════════════════
+//  PLANILLA MENSUAL
+// ═══════════════════════════════════════════════════════════════
+let planillaData = {};
+let planillaMesActual = '';
 
+async function loadPlanilla(){
+  try {
+    const snap = await db.collection('callup_planilla').get();
+    planillaData = {};
+    snap.forEach(d => { planillaData[d.id] = d.data().filas || []; });
+  } catch(e){ console.warn('Error cargando planilla:', e); }
+}
+
+async function savePlanillaMes(mes){
+  try {
+    await db.collection('callup_planilla').doc(mes).set({ filas: planillaData[mes] || [], updatedAt: new Date().toISOString() });
+  } catch(e){ console.warn('Error guardando planilla:', e); }
+}
+
+function initPlanilla(){
+  const sel = document.getElementById('planilla-mes-sel');
+  if(!sel) return;
+  sel.innerHTML = '';
+  const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const hoy = new Date();
+  for(let y = hoy.getFullYear(); y >= hoy.getFullYear()-1; y--){
+    for(let m = 11; m >= 0; m--){
+      if(y === hoy.getFullYear() && m > hoy.getMonth()) continue;
+      const val = y+'-'+String(m+1).padStart(2,'0');
+      const opt = document.createElement('option');
+      opt.value = val;
+      opt.textContent = meses[m]+' '+y;
+      sel.appendChild(opt);
+    }
+  }
+  sel.value = hoy.getFullYear()+'-'+String(hoy.getMonth()+1).padStart(2,'0');
+}
+
+function getPlanillaFilaBase(emp, mes){
+  const parts = mes.split('-').map(Number);
+  const anio = parts[0]; const mesN = parts[1];
+  const diasMes = new Date(anio, mesN, 0).getDate();
+  let diasBase = 30;
+  if(emp.ingreso_plla){
+    const ing = new Date(emp.ingreso_plla);
+    if(ing.getFullYear()===anio && ing.getMonth()+1===mesN){
+      diasBase = diasMes - ing.getDate() + 1;
+    }
+  }
+  const dmMes = dmData.filter(r=>r.doc===emp.documento && r.inicio && r.inicio.startsWith(mes));
+  const diasDM = dmMes.reduce((s,r)=>s+(r.ndias||0),0);
+  const licMes = licData.filter(r=>r.doc===emp.documento && r.inicio && r.inicio.startsWith(mes));
+  const diasLSG = licMes.filter(r=>r.tipo==='singoce').reduce((s,r)=>s+(r.ndias||0),0);
+  const diasConGoce = licMes.filter(r=>r.tipo==='goce').reduce((s,r)=>s+(r.ndias||0),0);
+  return { diasBase, diasDM, diasLSG, diasConGoce };
+}
+
+function calcPlanillaFila(fila){
+  const sueldo=parseFloat(fila.sueldo)||0;
+  const faltas=parseFloat(fila.faltas_dias)||0;
+  const diasDM=parseFloat(fila.dias_dm)||0;
+  const diasLSG=parseFloat(fila.dias_lsg)||0;
+  const diasConGoce=parseFloat(fila.dias_goce)||0;
+  const diasBase=parseFloat(fila.dias_base)||30;
+  const diasTrabajados=Math.max(0,diasBase-faltas-diasDM-diasLSG);
+  const valDia=sueldo/30;
+  const faltasSoles=r2(valDia*faltas);
+  const sueldoBruto=r2(sueldo-faltasSoles);
+  const descansoMedSoles=r2(valDia*diasDM);
+  const permisoRemun=r2(valDia*diasConGoce);
+  const subsidio=parseFloat(fila.subsidio)||0;
+  const bonoNocturno=parseFloat(fila.bono_nocturno)||0;
+  const comisiones=parseFloat(fila.comisiones)||0;
+  const dominical=parseFloat(fila.dominical)||0;
+  const feriado=parseFloat(fila.feriado)||0;
+  const reintegro=parseFloat(fila.reintegro)||0;
+  const sobretiempo=parseFloat(fila.sobretiempo)||0;
+  const bonoEspecial=parseFloat(fila.bono_especial)||0;
+  const movilidad=parseFloat(fila.movilidad)||0;
+  const totalIngresos=r2(sueldoBruto+descansoMedSoles+permisoRemun+subsidio+bonoNocturno+comisiones+dominical+feriado+reintegro+sobretiempo+bonoEspecial+movilidad);
+  const baseAfpOnp=r2(sueldoBruto+descansoMedSoles+permisoRemun+subsidio+bonoNocturno+comisiones+dominical+feriado+reintegro+sobretiempo);
+  const esONP=(fila.afp||'').toUpperCase()==='ONP';
+  let onp=0,aporteAfp=0,comisionAfp=0,seguroAfp=0,totalAfp=0;
+  if(esONP){ onp=r2(baseAfpOnp*0.13); }
+  else {
+    aporteAfp=r2(baseAfpOnp*0.10);
+    comisionAfp=r2(baseAfpOnp*(parseFloat(fila.pct_comision)||0)/100);
+    seguroAfp=r2(baseAfpOnp*0.0137);
+    totalAfp=r2(aporteAfp+comisionAfp+seguroAfp);
+  }
+  const quintaCat=parseFloat(fila.quinta_categoria)||0;
+  const totalDescuentos=r2(onp+totalAfp+quintaCat);
+  const netoAPagar=r2(totalIngresos-totalDescuentos);
+  const baseEssalud=r2(sueldoBruto+descansoMedSoles+permisoRemun+bonoNocturno+comisiones+dominical+feriado+reintegro+sobretiempo);
+  const essalud=r2(baseEssalud*0.09);
+  return { dias_trabajados:diasTrabajados, faltas_soles:faltasSoles, sueldo_bruto:sueldoBruto, descanso_med_soles:descansoMedSoles, permiso_remun:permisoRemun, total_ingresos:totalIngresos, onp, aporteAfp, comisionAfp, seguroAfp, totalAfp, quinta_categoria:quintaCat, total_descuentos:totalDescuentos, neto_a_pagar:netoAPagar, essalud, total_aport:essalud };
+}
+
+function r2(n){ return Math.round((n||0)*100)/100; }
+function fm(n){ return (parseFloat(n)||0).toFixed(2); }
+
+async function generarPlanilla(){
+  const mes=document.getElementById('planilla-mes-sel').value;
+  if(!mes) return;
+  planillaMesActual=mes;
+  const parts=mes.split('-').map(Number);
+  const anio=parts[0]; const mesN=parts[1];
+  const meses=['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const todos=[...DATA,...localNew];
+  const emps=todos.filter(emp=>{
+    if(isActivo(emp)) return true;
+    if(emp.fecha_baja && emp.fecha_baja!=='NaT') return emp.fecha_baja.startsWith(mes);
+    return false;
+  });
+  const guardado=planillaData[mes]||[];
+  const filas=emps.map(emp=>{
+    const base=getPlanillaFilaBase(emp,mes);
+    const prev=guardado.find(f=>f.doc===emp.documento)||{};
+    return {
+      doc:emp.documento, estado:isActivo(emp)?'ACTIVO':'INACTIVO',
+      tipo_doc:emp.tipo_doc||'DNI', nombre:emp.nombre, cargo:emp.cargo||'', area:emp.campana||'',
+      sueldo:parseFloat(emp.sueldo)||0, banco:emp.banco||'', cuenta:emp.cuenta||'', cci:emp.cci||'',
+      afp:emp.afp||'ONP', tipo_comision:emp.tipo_comision||'', pct_comision:parseFloat(emp.pct_comision)||0,
+      fecha_ingreso:emp.ingreso_plla||'', fecha_termino:(!isActivo(emp)&&emp.fecha_baja&&emp.fecha_baja!=='NaT')?emp.fecha_baja:'',
+      fecha_pago:emp.fecha_pago||'', bono_nocturno:parseFloat(emp.bono_nocturno)||0, movilidad:parseFloat(emp.bono_movilidad)||0,
+      dias_base:base.diasBase,
+      dias_dm:prev.dias_dm!==undefined?prev.dias_dm:base.diasDM,
+      dias_lsg:prev.dias_lsg!==undefined?prev.dias_lsg:base.diasLSG,
+      dias_goce:prev.dias_goce!==undefined?prev.dias_goce:base.diasConGoce,
+      dias_subsidio:prev.dias_subsidio!==undefined?prev.dias_subsidio:0,
+      faltas_dias:prev.faltas_dias!==undefined?prev.faltas_dias:0,
+      subsidio:prev.subsidio||0, comisiones:prev.comisiones||0, dominical:prev.dominical||0,
+      feriado:prev.feriado||0, reintegro:prev.reintegro||0, sobretiempo:prev.sobretiempo||0,
+      bono_especial:prev.bono_especial||0, quinta_categoria:prev.quinta_categoria||0,
+    };
+  });
+  planillaData[mes]=filas;
+  await savePlanillaMes(mes);
+  renderPlanillaTabla(mes);
+  document.getElementById('planilla-titulo').textContent='Planilla — '+meses[mesN]+' '+anio;
+  document.getElementById('planilla-tabla-wrap').style.display='block';
+  document.getElementById('planilla-empty').style.display='none';
+  showToast('✅ Planilla generada — '+filas.length+' colaboradores');
+}
+
+function renderPlanillaTabla(mes){
+  const filas=planillaData[mes]||[];
+  const tbody=document.getElementById('planilla-tbody');
+  tbody.innerHTML=filas.map((f,i)=>{
+    const c=calcPlanillaFila(f);
+    const esONP=(f.afp||'').toUpperCase()==='ONP';
+    return '<tr>'+
+      '<td style="text-align:center;font-size:11px">'+(i+1)+'</td>'+
+      '<td><span class="pill '+(f.estado==='ACTIVO'?'pill-activo':'pill-baja')+'" style="font-size:9px">'+f.estado+'</span></td>'+
+      '<td>'+f.tipo_doc+'</td>'+
+      '<td>'+f.doc+'</td>'+
+      '<td style="white-space:nowrap;font-weight:600">'+f.nombre+'</td>'+
+      '<td>'+f.cargo+'</td>'+
+      '<td>'+f.area+'</td>'+
+      '<td class="num-cell">'+fm(f.sueldo)+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','faltas_dias',this.textContent)">'+f.faltas_dias+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','dias_subsidio',this.textContent)">'+f.dias_subsidio+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','dias_goce',this.textContent)">'+f.dias_goce+'</td>'+
+      '<td class="num-cell" style="font-weight:700;color:#2d0a6b">'+c.dias_trabajados+'</td>'+
+      '<td class="num-cell">'+f.dias_dm+'</td>'+
+      '<td class="num-cell">'+f.dias_lsg+'</td>'+
+      '<td style="font-size:10px">'+f.banco+'</td>'+
+      '<td style="font-size:10px">'+f.cuenta+'</td>'+
+      '<td style="font-size:10px">'+f.cci+'</td>'+
+      '<td style="font-size:10px;font-weight:700">'+f.afp+'</td>'+
+      '<td style="font-size:10px">'+f.tipo_comision+'</td>'+
+      '<td style="font-size:10px">'+fmtDate(f.fecha_ingreso)+'</td>'+
+      '<td style="font-size:10px">'+( f.fecha_termino?fmtDate(f.fecha_termino):'—')+'</td>'+
+      '<td class="num-cell danger-cell">'+fm(c.faltas_soles)+'</td>'+
+      '<td class="num-cell" style="font-weight:700">'+fm(c.sueldo_bruto)+'</td>'+
+      '<td class="num-cell">'+fm(c.descanso_med_soles)+'</td>'+
+      '<td class="num-cell">'+fm(c.permiso_remun)+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','subsidio',this.textContent)">'+f.subsidio+'</td>'+
+      '<td class="num-cell">'+fm(f.bono_nocturno)+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','comisiones',this.textContent)">'+f.comisiones+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','dominical',this.textContent)">'+f.dominical+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','feriado',this.textContent)">'+f.feriado+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','reintegro',this.textContent)">'+f.reintegro+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','sobretiempo',this.textContent)">'+f.sobretiempo+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','bono_especial',this.textContent)">'+f.bono_especial+'</td>'+
+      '<td class="num-cell">'+fm(f.movilidad)+'</td>'+
+      '<td class="num-cell total-cell">'+fm(c.total_ingresos)+'</td>'+
+      '<td class="num-cell danger-cell">'+(esONP?fm(c.onp):'—')+'</td>'+
+      '<td class="num-cell danger-cell">'+(!esONP?fm(c.aporteAfp):'—')+'</td>'+
+      '<td class="num-cell danger-cell">'+(!esONP?fm(c.comisionAfp):'—')+'</td>'+
+      '<td class="num-cell danger-cell">'+(!esONP?fm(c.seguroAfp):'—')+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','quinta_categoria',this.textContent)">'+f.quinta_categoria+'</td>'+
+      '<td class="num-cell danger-cell">'+(!esONP?fm(c.totalAfp):'—')+'</td>'+
+      '<td class="num-cell danger-cell total-cell">'+fm(c.total_descuentos)+'</td>'+
+      '<td class="num-cell neto-cell">'+fm(c.neto_a_pagar)+'</td>'+
+      '<td class="num-cell">'+fm(c.essalud)+'</td>'+
+      '<td class="num-cell">'+fm(c.total_aport)+'</td>'+
+      '<td style="font-size:10px">'+( f.fecha_pago||'—')+'</td>'+
+    '</tr>';
+  }).join('');
+}
+
+async function updPlan(mes,idx,campo,val){
+  const num=parseFloat(String(val).replace(',','.'));
+  planillaData[mes][idx][campo]=isNaN(num)?0:num;
+  renderPlanillaTabla(mes);
+  await savePlanillaMes(mes);
+}
+
+function exportPlanillaExcel(){
+  const mes=planillaMesActual;
+  const filas=planillaData[mes]||[];
+  if(!filas.length){ showToast('Genera la planilla primero'); return; }
+  const meses=['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const parts=mes.split('-').map(Number);
+  const anio=parts[0]; const mesN=parts[1];
+  const headers=['N°','Estado','T.Doc','N° Doc','Nombre Completo','Cargo','Área','Sueldo Básico','Días Ausencia','Días Subsidio','Días Permiso c/Goce','Días Trabajados','Días DM','Días LSG','Banco','Cuenta','CCI','AFP','Tipo Comisión','F. Ingreso','F. Término','Faltas (S/)','Sueldo Bruto','Desc. Médico (S/)','Permiso Remun.','Subsidio Inc.','Bono Nocturno','Comisiones','Dominical','Feriado','Reintegro','Sobretiempo 25%','Bono Especial','Movilidad','Total Ingresos','ONP 13%','Aporte AFP 10%','Comisión AFP','AFP Seguros 1.37%','Quinta Cat.','Total AFP','Total Descuentos','Neto a Pagar','ESSALUD 9%','Total Aport','Fecha Pago'];
+  const rows=filas.map((f,i)=>{
+    const c=calcPlanillaFila(f);
+    const esONP=(f.afp||'').toUpperCase()==='ONP';
+    return [i+1,f.estado,f.tipo_doc,f.doc,f.nombre,f.cargo,f.area,f.sueldo,f.faltas_dias,f.dias_subsidio,f.dias_goce,c.dias_trabajados,f.dias_dm,f.dias_lsg,f.banco,f.cuenta,f.cci,f.afp,f.tipo_comision,f.fecha_ingreso,f.fecha_termino||'',c.faltas_soles,c.sueldo_bruto,c.descanso_med_soles,c.permiso_remun,f.subsidio,f.bono_nocturno,f.comisiones,f.dominical,f.feriado,f.reintegro,f.sobretiempo,f.bono_especial,f.movilidad,c.total_ingresos,esONP?c.onp:'',!esONP?c.aporteAfp:'',!esONP?c.comisionAfp:'',!esONP?c.seguroAfp:'',f.quinta_categoria,!esONP?c.totalAfp:'',c.total_descuentos,c.neto_a_pagar,c.essalud,c.total_aport,f.fecha_pago||''];
+  });
+  const ws=XLSX.utils.aoa_to_sheet([headers,...rows]);
+  ws['!cols']=headers.map((_,i)=>({wch:i===4?38:i<=6?14:12}));
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Planilla '+meses[mesN]+' '+anio);
+  XLSX.writeFile(wb,'Planilla_'+meses[mesN]+'_'+anio+'.xlsx');
+  showToast('✅ Planilla exportada — '+filas.length+' colaboradores');
+}
+</script>
+
+<style>
+#mod-planilla .num-cell{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+#mod-planilla .edit-cell{background:#faf5ff;color:#5016b8;font-weight:700;cursor:text;border-radius:4px}
+#mod-planilla .edit-cell:focus{outline:2px solid #8b3ff5;background:#f3e8ff}
+#mod-planilla .total-cell{background:#f3e8ff;font-weight:800;color:#2d0a6b}
+#mod-planilla .neto-cell{background:#d1fae5;font-weight:800;color:#065f46}
+#mod-planilla .danger-cell{color:#dc2626}
+#mod-planilla thead th{font-size:9px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:2}
+#mod-planilla tbody td{padding:7px 10px;font-size:11px}
+#planilla-tabla-wrap{overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 180px)}
+</style>
+
+<div id="mod-planilla" class="mod">
+  <div class="topbar">
+    <div><div class="page-title">💰 Planilla Mensual</div><div class="page-sub" id="planilla-titulo">Selecciona un mes para generar</div></div>
+    <div class="tbar-actions" style="gap:8px;align-items:center">
+      <select id="planilla-mes-sel" style="padding:7px 12px;border-radius:10px;border:1.5px solid rgba(255,255,255,.4);background:rgba(255,255,255,.15);color:#fff;font-size:12px;font-family:inherit;font-weight:600;cursor:pointer"></select>
+      <button class="btn btn-primary" onclick="generarPlanilla()">⚡ Generar planilla</button>
+      <button class="btn btn-primary" onclick="exportPlanillaExcel()" style="background:rgba(21,128,61,.7);border-color:rgba(255,255,255,.3)">📥 Exportar Excel</button>
+    </div>
+  </div>
+  <div class="content" style="padding:12px 16px;overflow:hidden;display:flex;flex-direction:column">
+    <div id="planilla-empty" style="text-align:center;padding:60px 20px;color:#9c7fc0;font-size:13px;font-weight:600">
+      <div style="font-size:40px;margin-bottom:12px">💰</div>
+      Selecciona un mes y haz clic en <strong>Generar planilla</strong>
+    </div>
+    <div id="planilla-tabla-wrap" style="display:none">
+      <div class="tbl-wrap" style="overflow:visible">
+        <table>
+          <thead>
+            <tr>
+              <th>N°</th><th>Estado</th><th>T.Doc</th><th>N° Doc</th><th>Nombre Completo</th><th>Cargo</th><th>Área</th>
+              <th>Sueldo Básico</th>
+              <th style="background:#7c3aed">Días Ausencia ✏️</th>
+              <th style="background:#7c3aed">Días Subsidio ✏️</th>
+              <th style="background:#7c3aed">Días Permiso c/Goce ✏️</th>
+              <th>Días Trabajados</th><th>Días DM</th><th>Días LSG</th>
+              <th>Banco</th><th>Cuenta</th><th>CCI</th><th>AFP</th><th>Tipo Comisión</th><th>F. Ingreso</th><th>F. Término</th>
+              <th>Faltas (S/)</th><th>Sueldo Bruto</th><th>Desc. Médico (S/)</th><th>Permiso Remun.</th>
+              <th style="background:#7c3aed">Subsidio ✏️</th>
+              <th>Bono Nocturno</th>
+              <th style="background:#7c3aed">Comisiones ✏️</th>
+              <th style="background:#7c3aed">Dominical ✏️</th>
+              <th style="background:#7c3aed">Feriado ✏️</th>
+              <th style="background:#7c3aed">Reintegro ✏️</th>
+              <th style="background:#7c3aed">Sobretiempo 25% ✏️</th>
+              <th style="background:#7c3aed">Bono Especial ✏️</th>
+              <th>Movilidad</th>
+              <th style="background:#3d1191">Total Ingresos</th>
+              <th>ONP 13%</th><th>Aporte AFP 10%</th><th>Comisión AFP</th><th>AFP Seguros 1.37%</th>
+              <th style="background:#7c3aed">Quinta Cat. ✏️</th>
+              <th>Total AFP</th>
+              <th style="background:#991b1b">Total Descuentos</th>
+              <th style="background:#065f46">Neto a Pagar</th>
+              <th>ESSALUD 9%</th><th>Total Aport</th><th>Fecha Pago</th>
+            </tr>
+          </thead>
+          <tbody id="planilla-tbody"></tbody>
+        </table>
+      </div>
+      <div style="font-size:10px;color:#9c7fc0;margin-top:8px;font-weight:600">✏️ Columnas moradas son editables — haz clic para modificar. Los cambios se guardan automáticamente.</div>
+    </div>
+  </div>
+</div>
 </body></html>
