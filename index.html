@@ -8,6 +8,7 @@
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script>
   const firebaseConfig = {
     apiKey: "AIzaSyBsafgSvddm3AYGFpocq9PZJx6bQVld4n8",
@@ -19,6 +20,7 @@
   };
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
+  const auth = firebase.auth();
 </script>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -279,12 +281,31 @@ tbody tr:hover{background:var(--pu-50)}
 </style>
 </head>
 <body>
-<div id="fb-loading" style="position:fixed;inset:0;background:linear-gradient(135deg,#2d0a6b,#5016b8);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;color:#fff;font-family:'Plus Jakarta Sans',sans-serif">
+<!-- LOGIN SCREEN -->
+<div id="login-screen" style="display:none;position:fixed;inset:0;background:linear-gradient(135deg,#2d0a6b 0%,#5016b8 60%,#7c3aed 100%);z-index:9999;align-items:center;justify-content:center;font-family:'Plus Jakarta Sans',sans-serif">
+  <div style="background:#fff;border-radius:24px;padding:40px 36px;width:380px;max-width:95%;box-shadow:0 32px 80px rgba(45,10,107,.5);text-align:center">
+    <div style="width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,#8b3ff5,#ec4899);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;color:#fff;margin:0 auto 16px;box-shadow:0 8px 24px rgba(139,63,245,.4)">RH</div>
+    <div style="font-size:22px;font-weight:800;color:#2d0a6b;margin-bottom:4px">RRHH Callup</div>
+    <div style="font-size:13px;color:#9c7fc0;margin-bottom:28px;font-weight:500">Ingresa tus credenciales para continuar</div>
+    <div style="text-align:left;margin-bottom:14px">
+      <label style="font-size:10px;font-weight:700;color:#6b21d4;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:5px">Correo electrónico</label>
+      <input id="login-email" type="email" placeholder="tucorreo@ejemplo.com" style="width:100%;padding:11px 14px;border-radius:10px;border:1.5px solid #e9d5ff;font-size:13px;color:#1e0a3c;font-family:inherit;outline:none;box-sizing:border-box;transition:border-color .2s" onfocus="this.style.borderColor='#8b3ff5'" onblur="this.style.borderColor='#e9d5ff'">
+    </div>
+    <div style="text-align:left;margin-bottom:8px">
+      <label style="font-size:10px;font-weight:700;color:#6b21d4;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:5px">Contraseña</label>
+      <input id="login-pass" type="password" placeholder="••••••••" style="width:100%;padding:11px 14px;border-radius:10px;border:1.5px solid #e9d5ff;font-size:13px;color:#1e0a3c;font-family:inherit;outline:none;box-sizing:border-box;transition:border-color .2s" onfocus="this.style.borderColor='#8b3ff5'" onblur="this.style.borderColor='#e9d5ff'" onkeydown="if(event.key==='Enter') doLogin()">
+    </div>
+    <div id="login-error" style="font-size:11px;color:#dc2626;font-weight:600;min-height:18px;margin-bottom:12px;text-align:left"></div>
+    <button onclick="doLogin()" style="width:100%;padding:13px;border-radius:12px;background:linear-gradient(135deg,#6b21d4,#8b3ff5);color:#fff;border:none;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;transition:opacity .15s;box-shadow:0 4px 16px rgba(107,33,212,.4)" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'">Ingresar →</button>
+  </div>
+</div>
+
+<div id="fb-loading" style="position:fixed;inset:0;background:linear-gradient(135deg,#2d0a6b,#5016b8);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9998;color:#fff;font-family:'Plus Jakarta Sans',sans-serif">
   <div style="font-size:32px;margin-bottom:12px">🔥</div>
   <div style="font-size:15px;font-weight:700;margin-bottom:8px">Conectando con la base de datos...</div>
   <div style="font-size:12px;opacity:0.6">RRHH Callup</div>
 </div>
-<div class="app">
+<div class="app" style="display:none">
 <nav class="sidebar">
   <div class="sidebar-header">
     <div class="logo">
@@ -316,6 +337,7 @@ tbody tr:hover{background:var(--pu-50)}
     <div><div class="page-title">📊 Dashboard — CALLUP BPO</div><div class="page-sub">Resumen general del personal activo</div></div>
     <div class="tbar-actions">
       <button class="btn btn-primary" onclick="clearState()" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3);font-size:11px" title="Borrar todos los cambios guardados y volver al estado original">🔄 Restablecer datos</button>
+      <button class="btn btn-primary" onclick="doLogout()" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3);font-size:11px" title="Cerrar sesión">🚪 Salir</button>
     </div>
   </div>
   <div class="content" id="db-content" style="overflow-y:auto">
@@ -2953,13 +2975,48 @@ function renderDashboard(){
   // Render all charts with current keys
   setChart1(_c1); setChart2(_c2); setChart3(_c3); setChart4(_c4);
 }
+// ── Autenticación ──────────────────────────────────────────────
+function doLogin(){
+  const email = document.getElementById('login-email').value.trim();
+  const pass  = document.getElementById('login-pass').value;
+  const errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+  if(!email || !pass){ errEl.textContent = 'Completa correo y contraseña.'; return; }
+  auth.signInWithEmailAndPassword(email, pass)
+    .catch(e => {
+      errEl.textContent = 'Correo o contraseña incorrectos.';
+    });
+}
+
+function doLogout(){
+  if(!confirm('¿Seguro que deseas cerrar sesión?')) return;
+  auth.signOut();
+}
+
 // Cargar todo desde Firestore antes de inicializar la UI
-(async function initApp(){
+auth.onAuthStateChanged(async (user) => {
+  const loginScreen = document.getElementById('login-screen');
+  const loader      = document.getElementById('fb-loading');
+  const appEl       = document.querySelector('.app');
+
+  if(!user){
+    // No hay sesión — mostrar login
+    if(loader)      loader.style.display = 'none';
+    if(appEl)       appEl.style.display  = 'none';
+    if(loginScreen){ loginScreen.style.display = 'flex'; }
+    return;
+  }
+
+  // Hay sesión — cargar datos y mostrar app
+  if(loginScreen) loginScreen.style.display = 'none';
+  if(appEl)       appEl.style.display = 'flex';
+  if(loader)      loader.style.display = 'flex';
+
   try {
-    // Cargar vacaciones en caché
     const vacDoc = await db.collection('callup_state').doc('vacaciones').get();
     window._vacDataCache = vacDoc.exists ? (vacDoc.data().data || {}) : {};
   } catch(e){ window._vacDataCache = {}; }
+
   await loadState();
   initFiltros();
   renderDashboard();
@@ -2967,10 +3024,9 @@ function renderDashboard(){
   renderRenov();
   renderBajas();
   renderCumples();
-  // Ocultar pantalla de carga
-  const loader = document.getElementById('fb-loading');
+
   if(loader) loader.style.display = 'none';
-})();
+});
 
 // Generar meses dinamicamente en selects de filtro
 (function(){
