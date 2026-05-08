@@ -4968,9 +4968,9 @@ function renderPlanillaTabla(mes){
       '<td>'+f.cargo+'</td>'+
       '<td>'+f.area+'</td>'+
       '<td class="num-cell">'+fm(f.sueldo)+'</td>'+
-      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','faltas_dias',this.textContent)">'+f.faltas_dias+'</td>'+
-      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','dias_subsidio',this.textContent)">'+f.dias_subsidio+'</td>'+
-      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','dias_goce',this.textContent)">'+f.dias_goce+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(\''+mes+\'\'','+i+',\'faltas_dias\',this.textContent)">'+f.faltas_dias+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(\''+mes+\'\'','+i+',\'dias_subsidio\',this.textContent)">'+f.dias_subsidio+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(\''+mes+\'\'','+i+',\'dias_goce\',this.textContent)">'+f.dias_goce+'</td>'+
       '<td class="num-cell" style="font-weight:700;color:#2d0a6b">'+c.dias_trabajados+'</td>'+
       '<td class="num-cell">'+f.dias_dm+'</td>'+
       '<td class="num-cell">'+f.dias_lsg+'</td>'+
@@ -4985,21 +4985,21 @@ function renderPlanillaTabla(mes){
       '<td class="num-cell" style="font-weight:700">'+fm(c.sueldo_bruto)+'</td>'+
       '<td class="num-cell">'+fm(c.descanso_med_soles)+'</td>'+
       '<td class="num-cell">'+fm(c.permiso_remun)+'</td>'+
-      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','subsidio',this.textContent)">'+f.subsidio+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(\''+mes+\'\'','+i+',\'subsidio\',this.textContent)">'+f.subsidio+'</td>'+
       '<td class="num-cell">'+fm(f.bono_nocturno)+'</td>'+
-      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','comisiones',this.textContent)">'+f.comisiones+'</td>'+
-      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','dominical',this.textContent)">'+f.dominical+'</td>'+
-      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','feriado',this.textContent)">'+f.feriado+'</td>'+
-      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','reintegro',this.textContent)">'+f.reintegro+'</td>'+
-      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','sobretiempo',this.textContent)">'+f.sobretiempo+'</td>'+
-      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','bono_especial',this.textContent)">'+f.bono_especial+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(\''+mes+\'\'','+i+',\'comisiones\',this.textContent)">'+f.comisiones+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(\''+mes+\'\'','+i+',\'dominical\',this.textContent)">'+f.dominical+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(\''+mes+\'\'','+i+',\'feriado\',this.textContent)">'+f.feriado+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(\''+mes+\'\'','+i+',\'reintegro\',this.textContent)">'+f.reintegro+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(\''+mes+\'\'','+i+',\'sobretiempo\',this.textContent)">'+f.sobretiempo+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(\''+mes+\'\'','+i+',\'bono_especial\',this.textContent)">'+f.bono_especial+'</td>'+
       '<td class="num-cell">'+fm(f.movilidad)+'</td>'+
       '<td class="num-cell total-cell">'+fm(c.total_ingresos)+'</td>'+
       '<td class="num-cell danger-cell">'+(esONP?fm(c.onp):'—')+'</td>'+
       '<td class="num-cell danger-cell">'+(!esONP?fm(c.aporteAfp):'—')+'</td>'+
       '<td class="num-cell danger-cell">'+(!esONP?fm(c.comisionAfp):'—')+'</td>'+
       '<td class="num-cell danger-cell">'+(!esONP?fm(c.seguroAfp):'—')+'</td>'+
-      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(''+mes+'','+i+','quinta_categoria',this.textContent)">'+f.quinta_categoria+'</td>'+
+      '<td class="num-cell edit-cell" contenteditable="true" onblur="updPlan(\''+mes+\'\'','+i+',\'quinta_categoria\',this.textContent)">'+f.quinta_categoria+'</td>'+
       '<td class="num-cell danger-cell">'+(!esONP?fm(c.totalAfp):'—')+'</td>'+
       '<td class="num-cell danger-cell total-cell">'+fm(c.total_descuentos)+'</td>'+
       '<td class="num-cell neto-cell">'+fm(c.neto_a_pagar)+'</td>'+
