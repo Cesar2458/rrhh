@@ -2993,29 +2993,34 @@ function doLogout(){
   auth.signOut();
 }
 
-// Al cargar la página, siempre cerrar sesión para pedir credenciales
+// Flag: sólo cargar la app una vez (evita loops)
+let _appLoaded = false;
+
+// Mostrar login inmediatamente, sin esperar a Firebase
 (function(){
-  const loginScreen = document.getElementById('login-screen');
-  const loader      = document.getElementById('fb-loading');
-  if(loader)      loader.style.display = 'none';
-  if(loginScreen) loginScreen.style.display = 'flex';
-  // Cerrar cualquier sesión activa al iniciar
-  auth.signOut();
+  document.getElementById('fb-loading').style.display  = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.querySelector('.app').style.display          = 'none';
+  // Limpiar sesión guardada en el navegador
+  auth.signOut().catch(()=>{});
 })();
 
 auth.onAuthStateChanged(async (user) => {
+  if(_appLoaded) return;          // ya cargó, ignorar disparos extra
+
   const loginScreen = document.getElementById('login-screen');
   const loader      = document.getElementById('fb-loading');
   const appEl       = document.querySelector('.app');
 
   if(!user){
-    if(loader)      loader.style.display = 'none';
-    if(appEl)       appEl.style.display  = 'none';
-    if(loginScreen) loginScreen.style.display = 'flex';
+    loader.style.display      = 'none';
+    appEl.style.display       = 'none';
+    loginScreen.style.display = 'flex';
     return;
   }
 
   // Hay sesión — cargar datos y mostrar app
+  _appLoaded = true;
   if(loginScreen) loginScreen.style.display = 'none';
   if(appEl)       appEl.style.display = 'none';
   if(loader)      loader.style.display = 'flex';
